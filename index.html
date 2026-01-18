@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { DoorOpen, DoorClosed, Sparkles, Skull, HelpCircle, XCircle, RotateCcw } from 'lucide-react';
+import { Sparkles, Skull, HelpCircle, XCircle, RotateCcw } from 'lucide-react';
 
 // --- Game Constants & Config ---
 const DOOR_TYPES = {
@@ -9,56 +9,79 @@ const DOOR_TYPES = {
   MYSTERY: { id: 'mystery', label: 'Mystery', color: 'bg-purple-700', border: 'border-purple-900', icon: HelpCircle, spawnRate: 'random', score: 25, chance: 0.15 },
 };
 
+const DOOR_STATUS = {
+  CLOSED: 'closed',
+  OPENING: 'opening',
+};
+
 const ANIMATION_DURATION = 600; // ms
 
 // --- Helper Functions ---
 const generateUniqueId = () => `door-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
+// Deterministic and safe randomizer
 const getRandomDoorType = () => {
-  const rand = Math.random();
-  let accumulated = 0;
-  for (const key in DOOR_TYPES) {
-    accumulated += DOOR_TYPES[key].chance;
-    if (rand <= accumulated) return DOOR_TYPES[key];
+  const entries = Object.values(DOOR_TYPES);
+  const totalChance = entries.reduce((sum, d) => sum + d.chance, 0);
+
+  let roll = Math.random() * totalChance;
+
+  for (const def of entries) {
+    roll -= def.chance;
+    if (roll <= 0) return def;
   }
-  return DOOR_TYPES.STANDARD;
+  return entries[0];
+};
+
+// Pure Game Logic Resolver
+const resolveDoorOutcome = (doorDef) => {
+  switch (doorDef.id) {
+    case 'standard':
+      return { newDoorsCount: 2, points: 10, message: "The path branches..." };
+    case 'golden':
+      return { newDoorsCount: 3, points: 50, message: "A treasure room! The path widens significantly." };
+    case 'trap':
+      return { newDoorsCount: 0, points: -20, message: "A dead end! The door slams shut." };
+    case 'mystery': {
+      const n = Math.floor(Math.random() * 4);
+      return {
+        newDoorsCount: n,
+        points: n === 0 ? 0 : 25,
+        message: n === 0 ? "It was a fake door. Nothing is here." : `Chaos! ${n} new portals appear.`
+      };
+    }
+    default:
+      return { newDoorsCount: 0, points: 0, message: "" };
+  }
 };
 
 // --- Sub-Component: The Door ---
-const Door = ({ door, onClick, disabled }) => {
+// Memoized to prevent re-renders on every parent state change
+const Door = React.memo(({ door, index, onClick, disabled }) => {
   const [isHovered, setIsHovered] = useState(false);
-  const [animationState, setAnimationState] = useState('idle'); // idle, opening, fading
-
-  useEffect(() => {
-    if (door.status === 'opening') {
-      setAnimationState('opening');
-      const timer = setTimeout(() => setAnimationState('fading'), 300);
-      return () => clearTimeout(timer);
-    }
-  }, [door.status]);
+  const isOpening = door.status === DOOR_STATUS.OPENING;
 
   const handleInteraction = () => {
-    if (disabled || door.status !== 'closed') return;
+    if (disabled || door.status !== DOOR_STATUS.CLOSED) return;
     onClick(door.id);
   };
 
   const TypeIcon = door.def.icon;
 
-  // Dynamic Styles based on state
+  // Dynamic Styles
   const baseClasses = "relative w-32 h-48 rounded-t-full shadow-xl transition-all duration-300 cursor-pointer select-none transform";
-  const hoverClasses = !disabled && door.status === 'closed' && isHovered ? "scale-105 -translate-y-2 shadow-2xl z-10" : "";
-  const openingClasses = animationState === 'opening' ? "scale-110 opacity-80" : "";
-  const fadingClasses = animationState === 'fading' ? "scale-0 opacity-0" : "";
+  const hoverClasses = !disabled && door.status === DOOR_STATUS.CLOSED && isHovered ? "scale-105 -translate-y-2 shadow-2xl z-10" : "";
+  const disabledClasses = disabled && !isOpening ? "opacity-60 cursor-not-allowed" : "";
+  const animationClasses = isOpening ? "animate-door-open" : "";
 
-  // The "Door Frame" style
   const frameStyle = `border-4 ${door.def.border} ${door.def.color}`;
   
-  // The "Inside" style (dark void usually, or light if opening)
-  const innerStyle = animationState === 'opening' ? 'bg-white' : 'bg-black';
+  // The "Inside" style (switches to white flash during animation via CSS usually, but we help it here)
+  const innerStyle = isOpening ? 'bg-white' : 'bg-black';
 
   return (
     <div 
-      className={`${baseClasses} ${hoverClasses} ${openingClasses} ${fadingClasses}`}
+      className={`${baseClasses} ${hoverClasses} ${disabledClasses} ${animationClasses}`}
       onClick={handleInteraction}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
@@ -67,24 +90,21 @@ const Door = ({ door, onClick, disabled }) => {
       <div className={`absolute inset-0 ${frameStyle} ${innerStyle} rounded-t-full overflow-hidden flex flex-col items-center justify-center`}>
         
         {/* Door Surface (The part that opens) */}
-        {door.status === 'closed' && (
+        {door.status === DOOR_STATUS.CLOSED && (
           <div className={`absolute inset-1 ${door.def.color} rounded-t-full border-2 border-white/10 flex items-center justify-center shadow-inner`}>
-            {/* Wood grain / Texture effect */}
             <div className="absolute inset-0 opacity-20 bg-[url('https://www.transparenttextures.com/patterns/wood-pattern.png')]"></div>
             
-            {/* Knob */}
             <div className="absolute right-4 top-1/2 w-3 h-3 bg-yellow-400 rounded-full shadow-md border border-yellow-600 group-hover:bg-yellow-200 transition-colors"></div>
             
-            {/* Icon / Symbol */}
             {TypeIcon && <TypeIcon className="w-8 h-8 text-white/50" />}
-            {!TypeIcon && <div className="text-4xl font-serif text-black/20 font-bold">{door.index + 1}</div>}
+            {!TypeIcon && <div className="text-4xl font-serif text-black/20 font-bold">{index + 1}</div>}
           </div>
         )}
 
         {/* Reveal content (briefly visible during animation) */}
-        {door.status === 'opening' && (
-          <div className="absolute inset-0 bg-white flex items-center justify-center animate-pulse">
-            <span className="text-black font-bold text-lg">
+        {isOpening && (
+          <div className="absolute inset-0 bg-white flex items-center justify-center">
+            <span className="text-black font-bold text-lg animate-pulse">
                {door.def.id === 'trap' ? 'TRAP!' : 'OPEN!'}
             </span>
           </div>
@@ -92,41 +112,38 @@ const Door = ({ door, onClick, disabled }) => {
       </div>
     </div>
   );
-};
+});
 
 // --- Main Application Component ---
 export default function App() {
-  // Game State
   const [doors, setDoors] = useState([]);
   const [score, setScore] = useState(0);
   const [doorsOpenedCount, setDoorsOpenedCount] = useState(0);
-  const [gameStatus, setGameStatus] = useState('playing'); // playing, gameover
+  const [gameStatus, setGameStatus] = useState('playing'); 
   const [logs, setLogs] = useState(["You stand before 3 doors. Choose wisely."]);
   const [isProcessing, setIsProcessing] = useState(false);
   
-  // Scroll to bottom of logs
   const logContainerRef = useRef(null);
+  
   useEffect(() => {
     if (logContainerRef.current) {
       logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
     }
   }, [logs]);
 
-  // Initial Load
   useEffect(() => {
     startGame();
   }, []);
 
   const addLog = (msg) => {
-    setLogs(prev => [...prev.slice(-4), msg]); // Keep last 5 logs
+    setLogs(prev => [...prev.slice(-5), msg]); // Keep last 5 + new one
   };
 
   const startGame = () => {
-    const initialDoors = Array.from({ length: 3 }).map((_, i) => ({
+    const initialDoors = Array.from({ length: 3 }).map(() => ({
       id: generateUniqueId(),
       def: DOOR_TYPES.STANDARD,
-      status: 'closed',
-      index: i
+      status: DOOR_STATUS.CLOSED,
     }));
     setDoors(initialDoors);
     setScore(0);
@@ -135,86 +152,70 @@ export default function App() {
     setLogs(["A new hallway stretches before you..."]);
   };
 
-  const handleDoorClick = (doorId) => {
+  // useCallback ensures handleDoorClick reference stays stable for React.memo
+  const handleDoorClick = useCallback((doorId) => {
     if (isProcessing || gameStatus !== 'playing') return;
 
-    // 1. Find the door
-    const doorIndex = doors.findIndex(d => d.id === doorId);
-    if (doorIndex === -1) return;
-    const clickedDoor = doors[doorIndex];
-
-    // 2. Lock interaction
-    setIsProcessing(true);
-
-    // 3. Update status to trigger animation
-    const updatedDoors = [...doors];
-    updatedDoors[doorIndex] = { ...clickedDoor, status: 'opening' };
-    setDoors(updatedDoors);
-
-    // 4. Resolve logic after animation delay
-    setTimeout(() => {
-      resolveDoorEffect(clickedDoor);
-      setIsProcessing(false);
-    }, ANIMATION_DURATION);
-  };
-
-  const resolveDoorEffect = (door) => {
-    let newDoorsCount = 0;
-    let points = door.def.score;
-    let message = "";
-
-    // Determine Spawn Count based on Type
-    if (door.def.id === 'standard') {
-      newDoorsCount = 2;
-      message = "The path branches...";
-    } else if (door.def.id === 'golden') {
-      newDoorsCount = 3;
-      message = "A treasure room! The path widens significantly.";
-    } else if (door.def.id === 'trap') {
-      newDoorsCount = 0; 
-      message = "A dead end! The door slams shut.";
-      // Traps might remove OTHER doors in a full version, 
-      // for MVP it just gives negative points and spawns nothing (reducing options)
-    } else if (door.def.id === 'mystery') {
-      newDoorsCount = Math.floor(Math.random() * 4); // 0 to 3
-      if (newDoorsCount === 0) {
-          message = "It was a fake door. Nothing is here.";
-          points = 0;
-      } else {
-          message = `Chaos! ${newDoorsCount} new portals appear.`;
-      }
-    }
-
-    // Logic: Remove the clicked door, Add N new doors
-    // We filter out the clicked door ID, then insert new ones
     setDoors(currentDoors => {
-      const remaining = currentDoors.filter(d => d.id !== door.id);
+      const idx = currentDoors.findIndex(d => d.id === doorId);
+      if (idx === -1) return currentDoors;
       
-      const newDoors = Array.from({ length: newDoorsCount }).map((_, i) => ({
-        id: generateUniqueId(),
-        def: getRandomDoorType(),
-        status: 'closed',
-        index: remaining.length + i
-      }));
-
-      // Randomly shuffle insert position or just append? 
-      // Appending is less disorienting for MVP
-      return [...remaining, ...newDoors];
+      // Update specific door to opening status
+      const updated = [...currentDoors];
+      updated[idx] = { ...updated[idx], status: DOOR_STATUS.OPENING };
+      return updated;
     });
 
-    // Update Stats
-    setScore(s => s + points);
-    setDoorsOpenedCount(c => c + 1);
-    addLog(message);
+    setIsProcessing(true);
 
-    // Check Loss Condition (No doors left)
-    // We check against the NEW state length. 
-    // Current length - 1 (removed) + newDoorsCount
-    const netChange = newDoorsCount - 1;
-    if (doors.length + netChange <= 0) {
-      setGameStatus('gameover');
-      addLog("The lights go out. There are no more doors.");
-    }
+    // We need the door definition for logic, find it in current state (or pass it)
+    // Accessing state here is stale if we aren't careful, but since we just updated it, 
+    // we can grab it from the event trigger context or find it again.
+    // For simplicity, we find it from the state updater or use a ref. 
+    // But since `doors` state dependency is tricky in timeout, we rely on the `doorId` 
+    // and find it in the resolver or pass the door def directly if we had it.
+    // Better pattern: calculate logic first or inside the effect.
+    
+    // We will do logic resolution after animation
+    setTimeout(() => {
+      // Pass the ID to resolver to find it in the FRESH state inside the setter
+      resolveDoorEffect(doorId);
+      setIsProcessing(false);
+    }, ANIMATION_DURATION);
+  }, [isProcessing, gameStatus]); // Dependencies
+
+  const resolveDoorEffect = (doorId) => {
+    setDoors(currentDoors => {
+      const doorIndex = currentDoors.findIndex(d => d.id === doorId);
+      if (doorIndex === -1) return currentDoors; // Door gone?
+      
+      const door = currentDoors[doorIndex];
+      const { newDoorsCount, points, message } = resolveDoorOutcome(door.def);
+
+      // 1. Update stats (Safe to do outside this reducer? Ideally yes, but for strict synced state...)
+      // React batching handles this well usually, but let's do stats update separate
+      setScore(s => s + points);
+      setDoorsOpenedCount(c => c + 1);
+      addLog(message);
+
+      // 2. Modify Doors List
+      const remaining = currentDoors.filter(d => d.id !== doorId);
+      const newDoors = Array.from({ length: newDoorsCount }).map(() => ({
+        id: generateUniqueId(),
+        def: getRandomDoorType(),
+        status: DOOR_STATUS.CLOSED,
+      }));
+
+      const nextDoors = [...remaining, ...newDoors];
+
+      // 3. Check Game Over with FRESH state
+      if (nextDoors.length === 0) {
+        setGameStatus('gameover');
+        addLog("The lights go out. There are no more doors.");
+      }
+
+      return nextDoors;
+    });
   };
 
   return (
@@ -247,7 +248,6 @@ export default function App() {
 
       {/* MAIN GAME AREA */}
       <div className="flex-1 overflow-y-auto p-8 relative custom-scrollbar">
-        {/* Ambient Background Text */}
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-5">
            <span className="text-9xl font-black">CHOOSE</span>
         </div>
@@ -255,10 +255,11 @@ export default function App() {
         <div className="max-w-6xl mx-auto min-h-[50vh]">
           {gameStatus === 'playing' ? (
             <div className="flex flex-wrap gap-8 justify-center items-center content-center transition-all duration-500">
-              {doors.map((door) => (
+              {doors.map((door, index) => (
                 <Door 
                   key={door.id} 
                   door={door} 
+                  index={index}
                   onClick={handleDoorClick}
                   disabled={isProcessing}
                 />
@@ -318,7 +319,6 @@ export default function App() {
         </div>
       </div>
       
-      {/* CSS for custom scrollbar within this component scope */}
       <style jsx>{`
         .custom-scrollbar::-webkit-scrollbar {
           width: 8px;
@@ -332,6 +332,17 @@ export default function App() {
         }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover {
           background: #57534e;
+        }
+
+        @keyframes doorOpenSequence {
+          0% { transform: scale(1); opacity: 1; }
+          15% { transform: scale(1.1); opacity: 1; }
+          60% { transform: scale(1.1); opacity: 0.9; }
+          100% { transform: scale(0); opacity: 0; }
+        }
+        
+        .animate-door-open {
+          animation: doorOpenSequence 600ms forwards ease-in-out;
         }
       `}</style>
     </div>
