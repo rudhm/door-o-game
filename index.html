@@ -58,7 +58,7 @@
 
         // --- Icons (Inline SVGs to remove dependencies) ---
         const Sparkles = ({ className }) => (
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/><path d="M5 3v4"/><path d="M9 3v4"/><path d="M7 3v4"/><path d="M3 7h4"/><path d="M3 5h4"/></svg>
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L12 3Z"/><path d="M5 3v4"/><path d="M9 3v4"/><path d="M7 3v4"/><path d="M3 7h4"/><path d="M3 5h4"/></svg>
         );
         const Skull = ({ className }) => (
             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><path d="M8 20v2h8v-2"/><path d="m12.5 17-.5-1-.5 1h1z"/><path d="M16 20a2 2 0 0 0 1.56-3.25 8 8 0 1 0-11.12 0A2 2 0 0 0 8 20"/></svg>
@@ -75,10 +75,10 @@
 
         // --- Game Constants & Config ---
         const DOOR_TYPES = {
-            STANDARD: { id: 'standard', label: 'Standard', color: 'bg-amber-700', border: 'border-amber-900', icon: null, spawnRate: 2, score: 10, chance: 0.6 },
-            GOLDEN: { id: 'golden', label: 'Golden', color: 'bg-yellow-500', border: 'border-yellow-700', icon: Sparkles, spawnRate: 3, score: 50, chance: 0.1 },
-            TRAP: { id: 'trap', label: 'Trap', color: 'bg-stone-800', border: 'border-red-900', icon: Skull, spawnRate: 0, score: -20, chance: 0.15 },
-            MYSTERY: { id: 'mystery', label: 'Mystery', color: 'bg-purple-700', border: 'border-purple-900', icon: HelpCircle, spawnRate: 'random', score: 25, chance: 0.15 },
+            STANDARD: { id: 'standard', label: 'Standard', icon: null, spawnRate: 2, score: 10, chance: 0.6 },
+            GOLDEN: { id: 'golden', label: 'Golden', icon: Sparkles, spawnRate: 3, score: 50, chance: 0.1 },
+            TRAP: { id: 'trap', label: 'Trap', icon: Skull, spawnRate: 0, score: -20, chance: 0.15 },
+            MYSTERY: { id: 'mystery', label: 'Mystery', icon: HelpCircle, spawnRate: 'random', score: 25, chance: 0.15 },
         };
 
         const DOOR_STATUS = {
@@ -100,6 +100,44 @@
                 if (roll <= 0) return def;
             }
             return entries[0];
+        };
+
+        // NEW: Generates unique visual properties for each door
+        const generateVisuals = (typeId) => {
+            let h, s, l;
+            switch (typeId) {
+                case 'standard': // Earthy wood tones
+                    h = 25 + Math.random() * 25; // 25-50 (Orange/Brown)
+                    s = 40 + Math.random() * 40; // 40-80%
+                    l = 25 + Math.random() * 25; // 25-50%
+                    break;
+                case 'golden': // Shiny Yellows/Golds
+                    h = 40 + Math.random() * 15; // 40-55
+                    s = 80 + Math.random() * 20; // 80-100%
+                    l = 45 + Math.random() * 20; // 45-65%
+                    break;
+                case 'trap': // Dark, desaturated, or reddish
+                    h = Math.random() < 0.5 ? 0 + Math.random() * 10 : 0; 
+                    s = Math.random() * 50;
+                    l = 10 + Math.random() * 15; // Very dark
+                    break;
+                case 'mystery': // Purples, Blues, Pinks
+                    h = 230 + Math.random() * 70; // 230-300
+                    s = 50 + Math.random() * 50;
+                    l = 30 + Math.random() * 30;
+                    break;
+                default: h=0; s=0; l=50;
+            }
+
+            return {
+                baseColor: `hsl(${h}, ${s}%, ${l}%)`,
+                darkColor: `hsl(${h}, ${s}%, ${l - 15}%)`,
+                borderColor: `hsl(${h}, ${s}%, ${Math.max(0, l - 30)}%)`,
+                borderWidth: `${3 + Math.floor(Math.random() * 5)}px`,
+                knobTop: `${40 + Math.random() * 20}%`, // Knob varies vertically
+                knobShape: Math.random() > 0.5 ? '50%' : '4px', // Circle or Square knob
+                textureOpacity: 0.05 + Math.random() * 0.25,
+            };
         };
 
         const resolveDoorOutcome = (doorDef) => {
@@ -134,11 +172,13 @@
             };
 
             const TypeIcon = door.def.icon;
+            const visuals = door.visuals;
+
+            // Base Classes
             const baseClasses = "relative w-32 h-48 rounded-t-full shadow-xl transition-all duration-300 cursor-pointer select-none transform";
             const hoverClasses = !disabled && door.status === DOOR_STATUS.CLOSED && isHovered ? "scale-105 -translate-y-2 shadow-2xl z-10" : "";
             const disabledClasses = disabled && !isOpening ? "opacity-60 cursor-not-allowed" : "";
             const animationClasses = isOpening ? "animate-door-open" : "";
-            const frameStyle = `border-4 ${door.def.border} ${door.def.color}`;
             const innerStyle = isOpening ? 'bg-white' : 'bg-black';
 
             return (
@@ -148,15 +188,53 @@
                     onMouseEnter={() => setIsHovered(true)}
                     onMouseLeave={() => setIsHovered(false)}
                 >
-                    <div className={`absolute inset-0 ${frameStyle} ${innerStyle} rounded-t-full overflow-hidden flex flex-col items-center justify-center`}>
+                    {/* Main Container / Frame */}
+                    <div 
+                        className={`absolute inset-0 ${innerStyle} rounded-t-full overflow-hidden flex flex-col items-center justify-center`}
+                        style={{
+                            border: `${visuals.borderWidth} solid ${visuals.borderColor}`,
+                        }}
+                    >
+                        {/* Closed Door Face */}
                         {door.status === DOOR_STATUS.CLOSED && (
-                            <div className={`absolute inset-1 ${door.def.color} rounded-t-full border-2 border-white/10 flex items-center justify-center shadow-inner`}>
-                                <div className="absolute inset-0 opacity-20 bg-[url('https://www.transparenttextures.com/patterns/wood-pattern.png')]"></div>
-                                <div className="absolute right-4 top-1/2 w-3 h-3 bg-yellow-400 rounded-full shadow-md border border-yellow-600 group-hover:bg-yellow-200 transition-colors"></div>
-                                {TypeIcon && <TypeIcon className="w-8 h-8 text-white/50" />}
-                                {!TypeIcon && <div className="text-4xl font-serif text-black/20 font-bold">{index + 1}</div>}
+                            <div 
+                                className="absolute inset-1 rounded-t-full flex items-center justify-center shadow-inner"
+                                style={{ 
+                                    backgroundColor: visuals.baseColor,
+                                    borderColor: 'rgba(255,255,255,0.1)',
+                                    borderWidth: '2px'
+                                }}
+                            >
+                                {/* Procedural Texture */}
+                                <div 
+                                    className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/wood-pattern.png')]"
+                                    style={{ opacity: visuals.textureOpacity }}
+                                ></div>
+                                
+                                {/* Inner Panel Detail (Bevel) */}
+                                <div 
+                                    className="absolute inset-4 rounded-t-full border border-black/10"
+                                    style={{ backgroundColor: visuals.darkColor, opacity: 0.3 }}
+                                ></div>
+
+                                {/* Knob */}
+                                <div 
+                                    className="absolute right-4 w-3 h-3 bg-yellow-400 shadow-md border border-yellow-600 group-hover:bg-yellow-200 transition-colors"
+                                    style={{ 
+                                        top: visuals.knobTop,
+                                        borderRadius: visuals.knobShape
+                                    }}
+                                ></div>
+                                
+                                {/* Icon / Label */}
+                                <div className="z-10 relative">
+                                    {TypeIcon && <TypeIcon className="w-8 h-8 text-white/50 drop-shadow-md" />}
+                                    {!TypeIcon && <div className="text-4xl font-serif text-black/20 font-bold">{index + 1}</div>}
+                                </div>
                             </div>
                         )}
+
+                        {/* Open Animation Flash */}
                         {isOpening && (
                             <div className="absolute inset-0 bg-white flex items-center justify-center">
                                 <span className="text-black font-bold text-lg animate-pulse">
@@ -174,20 +252,18 @@
             const [doors, setDoors] = useState([]);
             const [score, setScore] = useState(0);
             const [doorsOpenedCount, setDoorsOpenedCount] = useState(0);
-            const [gameStatus, setGameStatus] = useState('init'); // init, playing, gameover
+            const [gameStatus, setGameStatus] = useState('init'); 
             const [logs, setLogs] = useState(["You stand before 3 doors. Choose wisely."]);
             const [isProcessing, setIsProcessing] = useState(false);
             
             const logContainerRef = useRef(null);
             
-            // Auto-scroll logs
             useEffect(() => {
                 if (logContainerRef.current) {
                     logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
                 }
             }, [logs]);
 
-            // Game Over Check
             useEffect(() => {
                 if (gameStatus === 'playing' && doors.length === 0 && !isProcessing) {
                     setGameStatus('gameover');
@@ -195,7 +271,6 @@
                 }
             }, [doors, gameStatus, isProcessing]);
 
-            // Initial Start
             useEffect(() => {
                 startGame();
             }, []);
@@ -205,11 +280,15 @@
             };
 
             const startGame = () => {
-                const initialDoors = Array.from({ length: 3 }).map(() => ({
-                    id: generateUniqueId(),
-                    def: DOOR_TYPES.STANDARD,
-                    status: DOOR_STATUS.CLOSED,
-                }));
+                const initialDoors = Array.from({ length: 3 }).map(() => {
+                    const typeDef = DOOR_TYPES.STANDARD;
+                    return {
+                        id: generateUniqueId(),
+                        def: typeDef,
+                        status: DOOR_STATUS.CLOSED,
+                        visuals: generateVisuals(typeDef.id) // Init visuals
+                    };
+                });
                 setDoors(initialDoors);
                 setScore(0);
                 setDoorsOpenedCount(0);
@@ -221,15 +300,12 @@
             const handleDoorClick = useCallback((door) => {
                 if (isProcessing || gameStatus !== 'playing') return;
 
-                // 1. Lock UI
                 setIsProcessing(true);
 
-                // 2. Start Animation (Update Status)
                 setDoors(current => current.map(d => 
                     d.id === door.id ? { ...d, status: DOOR_STATUS.OPENING } : d
                 ));
 
-                // 3. Process Logic after delay
                 setTimeout(() => {
                     const { newDoorsCount, points, message } = resolveDoorOutcome(door.def);
 
@@ -239,11 +315,15 @@
 
                     setDoors(current => {
                         const remaining = current.filter(d => d.id !== door.id);
-                        const newDoors = Array.from({ length: newDoorsCount }).map(() => ({
-                            id: generateUniqueId(),
-                            def: getRandomDoorType(),
-                            status: DOOR_STATUS.CLOSED,
-                        }));
+                        const newDoors = Array.from({ length: newDoorsCount }).map(() => {
+                            const newType = getRandomDoorType();
+                            return {
+                                id: generateUniqueId(),
+                                def: newType,
+                                status: DOOR_STATUS.CLOSED,
+                                visuals: generateVisuals(newType.id) // Generate unique visuals for new doors
+                            };
+                        });
                         return [...remaining, ...newDoors];
                     });
 
