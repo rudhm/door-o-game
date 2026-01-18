@@ -1,0 +1,339 @@
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { DoorOpen, DoorClosed, Sparkles, Skull, HelpCircle, XCircle, RotateCcw } from 'lucide-react';
+
+// --- Game Constants & Config ---
+const DOOR_TYPES = {
+  STANDARD: { id: 'standard', label: 'Standard', color: 'bg-amber-700', border: 'border-amber-900', icon: null, spawnRate: 2, score: 10, chance: 0.6 },
+  GOLDEN: { id: 'golden', label: 'Golden', color: 'bg-yellow-500', border: 'border-yellow-700', icon: Sparkles, spawnRate: 3, score: 50, chance: 0.1 },
+  TRAP: { id: 'trap', label: 'Trap', color: 'bg-stone-800', border: 'border-red-900', icon: Skull, spawnRate: 0, score: -20, chance: 0.15 },
+  MYSTERY: { id: 'mystery', label: 'Mystery', color: 'bg-purple-700', border: 'border-purple-900', icon: HelpCircle, spawnRate: 'random', score: 25, chance: 0.15 },
+};
+
+const ANIMATION_DURATION = 600; // ms
+
+// --- Helper Functions ---
+const generateUniqueId = () => `door-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+const getRandomDoorType = () => {
+  const rand = Math.random();
+  let accumulated = 0;
+  for (const key in DOOR_TYPES) {
+    accumulated += DOOR_TYPES[key].chance;
+    if (rand <= accumulated) return DOOR_TYPES[key];
+  }
+  return DOOR_TYPES.STANDARD;
+};
+
+// --- Sub-Component: The Door ---
+const Door = ({ door, onClick, disabled }) => {
+  const [isHovered, setIsHovered] = useState(false);
+  const [animationState, setAnimationState] = useState('idle'); // idle, opening, fading
+
+  useEffect(() => {
+    if (door.status === 'opening') {
+      setAnimationState('opening');
+      const timer = setTimeout(() => setAnimationState('fading'), 300);
+      return () => clearTimeout(timer);
+    }
+  }, [door.status]);
+
+  const handleInteraction = () => {
+    if (disabled || door.status !== 'closed') return;
+    onClick(door.id);
+  };
+
+  const TypeIcon = door.def.icon;
+
+  // Dynamic Styles based on state
+  const baseClasses = "relative w-32 h-48 rounded-t-full shadow-xl transition-all duration-300 cursor-pointer select-none transform";
+  const hoverClasses = !disabled && door.status === 'closed' && isHovered ? "scale-105 -translate-y-2 shadow-2xl z-10" : "";
+  const openingClasses = animationState === 'opening' ? "scale-110 opacity-80" : "";
+  const fadingClasses = animationState === 'fading' ? "scale-0 opacity-0" : "";
+
+  // The "Door Frame" style
+  const frameStyle = `border-4 ${door.def.border} ${door.def.color}`;
+  
+  // The "Inside" style (dark void usually, or light if opening)
+  const innerStyle = animationState === 'opening' ? 'bg-white' : 'bg-black';
+
+  return (
+    <div 
+      className={`${baseClasses} ${hoverClasses} ${openingClasses} ${fadingClasses}`}
+      onClick={handleInteraction}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
+      {/* Door Frame/Background */}
+      <div className={`absolute inset-0 ${frameStyle} ${innerStyle} rounded-t-full overflow-hidden flex flex-col items-center justify-center`}>
+        
+        {/* Door Surface (The part that opens) */}
+        {door.status === 'closed' && (
+          <div className={`absolute inset-1 ${door.def.color} rounded-t-full border-2 border-white/10 flex items-center justify-center shadow-inner`}>
+            {/* Wood grain / Texture effect */}
+            <div className="absolute inset-0 opacity-20 bg-[url('https://www.transparenttextures.com/patterns/wood-pattern.png')]"></div>
+            
+            {/* Knob */}
+            <div className="absolute right-4 top-1/2 w-3 h-3 bg-yellow-400 rounded-full shadow-md border border-yellow-600 group-hover:bg-yellow-200 transition-colors"></div>
+            
+            {/* Icon / Symbol */}
+            {TypeIcon && <TypeIcon className="w-8 h-8 text-white/50" />}
+            {!TypeIcon && <div className="text-4xl font-serif text-black/20 font-bold">{door.index + 1}</div>}
+          </div>
+        )}
+
+        {/* Reveal content (briefly visible during animation) */}
+        {door.status === 'opening' && (
+          <div className="absolute inset-0 bg-white flex items-center justify-center animate-pulse">
+            <span className="text-black font-bold text-lg">
+               {door.def.id === 'trap' ? 'TRAP!' : 'OPEN!'}
+            </span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// --- Main Application Component ---
+export default function App() {
+  // Game State
+  const [doors, setDoors] = useState([]);
+  const [score, setScore] = useState(0);
+  const [doorsOpenedCount, setDoorsOpenedCount] = useState(0);
+  const [gameStatus, setGameStatus] = useState('playing'); // playing, gameover
+  const [logs, setLogs] = useState(["You stand before 3 doors. Choose wisely."]);
+  const [isProcessing, setIsProcessing] = useState(false);
+  
+  // Scroll to bottom of logs
+  const logContainerRef = useRef(null);
+  useEffect(() => {
+    if (logContainerRef.current) {
+      logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
+    }
+  }, [logs]);
+
+  // Initial Load
+  useEffect(() => {
+    startGame();
+  }, []);
+
+  const addLog = (msg) => {
+    setLogs(prev => [...prev.slice(-4), msg]); // Keep last 5 logs
+  };
+
+  const startGame = () => {
+    const initialDoors = Array.from({ length: 3 }).map((_, i) => ({
+      id: generateUniqueId(),
+      def: DOOR_TYPES.STANDARD,
+      status: 'closed',
+      index: i
+    }));
+    setDoors(initialDoors);
+    setScore(0);
+    setDoorsOpenedCount(0);
+    setGameStatus('playing');
+    setLogs(["A new hallway stretches before you..."]);
+  };
+
+  const handleDoorClick = (doorId) => {
+    if (isProcessing || gameStatus !== 'playing') return;
+
+    // 1. Find the door
+    const doorIndex = doors.findIndex(d => d.id === doorId);
+    if (doorIndex === -1) return;
+    const clickedDoor = doors[doorIndex];
+
+    // 2. Lock interaction
+    setIsProcessing(true);
+
+    // 3. Update status to trigger animation
+    const updatedDoors = [...doors];
+    updatedDoors[doorIndex] = { ...clickedDoor, status: 'opening' };
+    setDoors(updatedDoors);
+
+    // 4. Resolve logic after animation delay
+    setTimeout(() => {
+      resolveDoorEffect(clickedDoor);
+      setIsProcessing(false);
+    }, ANIMATION_DURATION);
+  };
+
+  const resolveDoorEffect = (door) => {
+    let newDoorsCount = 0;
+    let points = door.def.score;
+    let message = "";
+
+    // Determine Spawn Count based on Type
+    if (door.def.id === 'standard') {
+      newDoorsCount = 2;
+      message = "The path branches...";
+    } else if (door.def.id === 'golden') {
+      newDoorsCount = 3;
+      message = "A treasure room! The path widens significantly.";
+    } else if (door.def.id === 'trap') {
+      newDoorsCount = 0; 
+      message = "A dead end! The door slams shut.";
+      // Traps might remove OTHER doors in a full version, 
+      // for MVP it just gives negative points and spawns nothing (reducing options)
+    } else if (door.def.id === 'mystery') {
+      newDoorsCount = Math.floor(Math.random() * 4); // 0 to 3
+      if (newDoorsCount === 0) {
+          message = "It was a fake door. Nothing is here.";
+          points = 0;
+      } else {
+          message = `Chaos! ${newDoorsCount} new portals appear.`;
+      }
+    }
+
+    // Logic: Remove the clicked door, Add N new doors
+    // We filter out the clicked door ID, then insert new ones
+    setDoors(currentDoors => {
+      const remaining = currentDoors.filter(d => d.id !== door.id);
+      
+      const newDoors = Array.from({ length: newDoorsCount }).map((_, i) => ({
+        id: generateUniqueId(),
+        def: getRandomDoorType(),
+        status: 'closed',
+        index: remaining.length + i
+      }));
+
+      // Randomly shuffle insert position or just append? 
+      // Appending is less disorienting for MVP
+      return [...remaining, ...newDoors];
+    });
+
+    // Update Stats
+    setScore(s => s + points);
+    setDoorsOpenedCount(c => c + 1);
+    addLog(message);
+
+    // Check Loss Condition (No doors left)
+    // We check against the NEW state length. 
+    // Current length - 1 (removed) + newDoorsCount
+    const netChange = newDoorsCount - 1;
+    if (doors.length + netChange <= 0) {
+      setGameStatus('gameover');
+      addLog("The lights go out. There are no more doors.");
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-stone-900 text-stone-100 font-sans selection:bg-amber-500 selection:text-black flex flex-col overflow-hidden">
+      
+      {/* HEADER: HUD */}
+      <div className="bg-stone-950 border-b border-stone-800 p-4 shadow-lg z-20">
+        <div className="max-w-6xl mx-auto flex justify-between items-center">
+          <div>
+            <h1 className="text-xl font-bold tracking-widest text-amber-500 uppercase">The Corridor</h1>
+            <p className="text-xs text-stone-500">Recursive Exploration</p>
+          </div>
+          
+          <div className="flex gap-8 text-center">
+            <div>
+              <div className="text-xs text-stone-500 uppercase tracking-wider">Score</div>
+              <div className="text-2xl font-mono text-white">{score}</div>
+            </div>
+            <div>
+              <div className="text-xs text-stone-500 uppercase tracking-wider">Opened</div>
+              <div className="text-2xl font-mono text-amber-200">{doorsOpenedCount}</div>
+            </div>
+             <div>
+              <div className="text-xs text-stone-500 uppercase tracking-wider">Available</div>
+              <div className="text-2xl font-mono text-stone-300">{doors.length}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* MAIN GAME AREA */}
+      <div className="flex-1 overflow-y-auto p-8 relative custom-scrollbar">
+        {/* Ambient Background Text */}
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-5">
+           <span className="text-9xl font-black">CHOOSE</span>
+        </div>
+
+        <div className="max-w-6xl mx-auto min-h-[50vh]">
+          {gameStatus === 'playing' ? (
+            <div className="flex flex-wrap gap-8 justify-center items-center content-center transition-all duration-500">
+              {doors.map((door) => (
+                <Door 
+                  key={door.id} 
+                  door={door} 
+                  onClick={handleDoorClick}
+                  disabled={isProcessing}
+                />
+              ))}
+              {doors.length === 0 && (
+                 <div className="text-stone-500 italic">The hallway is empty...</div>
+              )}
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center h-full animate-in fade-in zoom-in duration-500 mt-20">
+              <XCircle className="w-24 h-24 text-stone-700 mb-6" />
+              <h2 className="text-4xl font-bold text-stone-300 mb-2">Dead End</h2>
+              <p className="text-stone-500 mb-8">You opened {doorsOpenedCount} doors and scored {score} points.</p>
+              <button 
+                onClick={startGame}
+                className="flex items-center gap-2 px-8 py-3 bg-amber-700 hover:bg-amber-600 text-white rounded-full font-bold transition-all shadow-lg hover:shadow-amber-900/50"
+              >
+                <RotateCcw className="w-5 h-5" /> Try Again
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* FOOTER: Log & Info */}
+      <div className="bg-stone-950 border-t border-stone-800 p-4 h-32 flex-shrink-0 z-20">
+        <div className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-4 h-full">
+          
+          {/* Action Log */}
+          <div className="relative h-full overflow-hidden border-l-2 border-stone-800 pl-4">
+             <div className="absolute top-0 left-4 text-[10px] text-stone-600 uppercase tracking-widest mb-1">Journal</div>
+             <div ref={logContainerRef} className="h-full overflow-y-auto pt-5 space-y-1 text-sm font-mono text-stone-400">
+               {logs.map((log, i) => (
+                 <div key={i} className="animate-in slide-in-from-left-2 duration-300">
+                   <span className="text-stone-600 mr-2">{'>'}</span>{log}
+                 </div>
+               ))}
+             </div>
+          </div>
+
+          {/* Legend */}
+          <div className="hidden md:flex items-center justify-end gap-6 text-xs text-stone-500">
+             <div className="flex items-center gap-2">
+               <div className="w-3 h-3 bg-amber-700 rounded-sm"></div> Standard (+2 Doors)
+             </div>
+             <div className="flex items-center gap-2">
+               <div className="w-3 h-3 bg-yellow-500 rounded-sm"></div> Golden (+3 Doors)
+             </div>
+             <div className="flex items-center gap-2">
+               <div className="w-3 h-3 bg-purple-700 rounded-sm"></div> Mystery (?)
+             </div>
+             <div className="flex items-center gap-2">
+               <div className="w-3 h-3 bg-stone-800 border border-red-900 rounded-sm"></div> Trap (Dead End)
+             </div>
+          </div>
+
+        </div>
+      </div>
+      
+      {/* CSS for custom scrollbar within this component scope */}
+      <style jsx>{`
+        .custom-scrollbar::-webkit-scrollbar {
+          width: 8px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+          background: #1c1917;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+          background: #44403c;
+          border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+          background: #57534e;
+        }
+      `}</style>
+    </div>
+  );
+}
